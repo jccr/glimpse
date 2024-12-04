@@ -1,36 +1,59 @@
-import { Router } from "@lit-labs/router";
+import { Router, PathRouteConfig } from "@lit-labs/router";
 import { AppStyledElement } from "./AppStyledElement";
-import { PathRouteConfigWithBreadcrumb } from "./Breadcrumbs";
+import { ref, createRef, Ref } from "lit/directives/ref.js";
 import { html, LitElement } from "lit";
 import { customElement } from "lit/decorators.js";
-import "./Breadcrumbs";
 import "./ThemeSelector";
 import "./Icon";
-import "./pages/HomePage";
-import "./pages/AboutPage";
-import "./pages/ContactPage";
+import "./pages/StartPage";
+import "./render/text/csv/CsvTable";
 import { initNavigation } from "../navigation";
+import { CsvTable } from "./render/text/csv/CsvTable";
+import Papa from "papaparse";
 
 @customElement("x-app")
 export class Application extends AppStyledElement(LitElement) {
-  private routes: PathRouteConfigWithBreadcrumb[] = [
+  _file: File | null = null;
+
+  get file(): File | null {
+    return this._file;
+  }
+
+  csvTableRef: Ref<CsvTable> = createRef();
+
+  set file(file: File | null) {
+    console.log("file", file);
+    if (!file) return;
+
+    Papa.parse(file, {
+      complete: (results) => {
+        if (!this.csvTableRef.value) return;
+        this.csvTableRef.value.data = results.data as string[][];
+      },
+    });
+
+    // const reader = new FileReader();
+    // reader.onload = () => {};
+    // reader.readAsText(file);
+  }
+
+  private routes: PathRouteConfig[] = [
     {
       path: "/",
-      name: "Home",
-      render: () => html` <home-page></home-page> `,
-      breadcrumbs: ["Home"],
+      name: "Start",
+      render: () => html`
+        <start-page
+          @file=${(e: CustomEvent) => {
+            this.router.goto("/csv");
+            this.file = e.detail;
+          }}
+        ></start-page>
+      `,
     },
     {
-      path: "/about",
-      name: "About",
-      render: () => html`<about-page></about-page>`,
-      breadcrumbs: ["Home", "About"],
-    },
-    {
-      path: "/contact",
-      name: "Contact",
-      render: () => html`<contact-page></contact-page>`,
-      breadcrumbs: ["Home", "Contact"],
+      path: "/csv",
+      name: "CSV",
+      render: () => html`<csv-table ${ref(this.csvTableRef)}></csv-table>`,
     },
   ];
 
@@ -38,49 +61,19 @@ export class Application extends AppStyledElement(LitElement) {
 
   render() {
     return html`
-      <div
-        class="fixed w-full z-10 top-0 bg-base-100 bg-opacity-70 backdrop-blur-md"
-      >
-        <div class="navbar">
+      <div class="grid grid-rows-[auto_1fr] h-screen">
+        <div class="navbar bg-base-300 z-10">
           <div class="flex-1">
-            <a class="btn btn-ghost text-xl" href="/">My App</a>
+            <a class="btn btn-ghost text-xl">glimpse</a>
           </div>
-          ${this.toolbar()}
+          <div class="flex-none">
+            <theme-selector></theme-selector>
+          </div>
         </div>
-        <app-breadcrumbs
-          .routes=${this.routes}
-          .link=${this.router.link()}
-        ></app-breadcrumbs>
+
+        <div class="bg-base-200">${this.router.outlet()}</div>
       </div>
-      <!-- this shifts the contents down to clear the floating navbar -->
-      <div style="padding-top: 8rem;">${this.router.outlet()}</div>
     `;
-  }
-  private toolbar() {
-    return html` <div class="flex-none">
-      <ul
-        class="menu menu-horizontal bg-base-200 text-2xl rounded-box text-center"
-      >
-        <li>
-          <a href="/" aria-label="Home Page">
-            <b-icon icon="house-door"></b-icon>
-          </a>
-        </li>
-        <li>
-          <a href="/contact" aria-label="Contact Page">
-            <b-icon icon="person-lines" filled></b-icon>
-          </a>
-        </li>
-        <li>
-          <a href="/about" aria-label="About Page">
-            <b-icon icon="info-circle" filled></b-icon>
-          </a>
-        </li>
-        <li>
-          <theme-selector></theme-selector>
-        </li>
-      </ul>
-    </div>`;
   }
 
   connectedCallback() {

@@ -1,6 +1,6 @@
 import { customElement } from "lit/decorators.js";
 import { AppStyledElement } from "./AppStyledElement";
-import { html, css, PropertyValues, LitElement } from "lit";
+import { html, PropertyValues, LitElement } from "lit";
 
 type ThemeName =
   | "default"
@@ -106,16 +106,9 @@ export class ThemeSelector extends AppStyledElement(LitElement) {
 
   constructor() {
     super();
-    // this.selectedTheme = ThemeButton.currentTheme;
   }
 
   override connectedCallback(): void {
-    // this is a more robust way of capturing click events on the dropdown
-    // e.g. when its embedded in a daisy menu, daisy will add a thick margin around the dropdown
-    // which while visible cannot be clicked on.
-    this.addEventListener("click", (e) => {
-      this.openDropDown();
-    });
     super.connectedCallback();
   }
 
@@ -127,18 +120,14 @@ export class ThemeSelector extends AppStyledElement(LitElement) {
   protected render() {
     return html`
       <div
-        class="dropdown dropdown-end h-max w-max p-0 m-0"
-        @focusout=${this.closeDropDown}
-        @click=${this.onDropdownFocus}
-        @focusin=${this.onDropdownFocus}
-        @keydown=${this.onKey}
+        class="dropdown dropdown-end dropdown-bottom h-max w-max p-0 m-0"
         tabindex="0"
       >
         <div
           tabindex="0"
           role="button"
           aria-label="Change Theme"
-          class="m-0 p-0 border-0 border-spacing-y-0 max-h-min max-w-min"
+          class="btn btn-square btn-ghost"
         >
           ${ThemeSelector.isCurrentThemeLight
             ? html`<b-icon icon="sun" filled></b-icon>`
@@ -165,80 +154,20 @@ export class ThemeSelector extends AppStyledElement(LitElement) {
             class="theme-controller btn btn-sm btn-block btn-ghost justify-start"
             aria-label=${definition.title}
             value=${name}
-            ?checked=${this.isThemeSelected(name as ThemeName)}
-            @pointerenter=${this.onTryTheme}
             @click=${this.onChangeTheme}
-            @keydown=${this.onKey}
           />
         </li>
-      `
+      `,
     );
   }
 
-  // -- event handlers --
-
-  private onKey(e: KeyboardEvent) {
-    if (e.code === "Escape" || e.code === "Enter") {
-      e.preventDefault();
-      if (e.code === "Escape") {
-        // reset
-        this.documentTheme = this.selectedTheme;
-      }
-      this.closeDropDown();
-      this.requestUpdate();
-    }
-  }
-
-  private onDropdownFocus(e: Event) {
-    console.log("focus", e);
-    e.preventDefault();
-    this.selectedTheme = ThemeSelector.currentTheme;
-    this.openDropDown();
-  }
-
-  private onTryTheme(e: Event) {
-    console.log("try theme", e);
-    e.preventDefault();
-    const theme = (e.target as HTMLInputElement).value as ThemeName;
-    this.documentTheme = theme;
-    this.requestUpdate();
-  }
-
   private onChangeTheme(e: Event) {
-    console.log("change theme", e);
     e.preventDefault();
-    const theme = (e.target as HTMLInputElement).value as ThemeName;
+    const currentTarget = e.currentTarget as HTMLInputElement;
+    const theme = currentTarget.value as ThemeName;
     this.selectedTheme = theme;
-    this.closeDropDown();
     this.requestUpdate();
-  }
-
-  // -- private methods --
-
-  private openDropDown() {
-    const dropdown = this.renderRoot.querySelector(".dropdown") as HTMLElement;
-    const content = this.renderRoot.querySelector(
-      ".dropdown-content"
-    ) as HTMLElement;
-    dropdown.classList.add("dropdown-open");
-    content.focus();
-  }
-
-  private closeDropDown() {
-    console.log("closing");
-    const dropdown = this.renderRoot.querySelector(".dropdown") as HTMLElement;
-    dropdown.classList.remove("dropdown-open");
-    const hiddenFocus = this.renderRoot.querySelector(
-      "#focus-here"
-    ) as HTMLElement;
-    window.setTimeout(() => {
-      hiddenFocus.focus();
-      hiddenFocus.blur();
-    }, 1);
-  }
-
-  private isThemeSelected(theme: ThemeName) {
-    return ThemeSelector.currentTheme === theme;
+    currentTarget.blur();
   }
 
   private set documentTheme(theme: ThemeName) {
@@ -248,7 +177,7 @@ export class ThemeSelector extends AppStyledElement(LitElement) {
     localStorage.setItem("theme", theme);
     this.shadowRoot?.ownerDocument.documentElement.setAttribute(
       "data-theme",
-      theme
+      theme,
     );
   }
 }

@@ -1,8 +1,14 @@
+import path from "path";
 import { defineConfig } from "vite";
 import compression from "vite-plugin-compression";
 import Sitemap from "vite-plugin-sitemap";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   build: {
     target: "esnext",
   },
@@ -20,7 +26,7 @@ export default defineConfig({
       },
     }),
 
-    Sitemap({hostname: "http://localhost:5173"}),
+    Sitemap({ hostname: "http://localhost:5173" }),
   ],
   optimizeDeps: {
     esbuildOptions: {
