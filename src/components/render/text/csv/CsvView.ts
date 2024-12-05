@@ -19,6 +19,7 @@ export class CsvView extends AppStyledElement(LitElement) {
   useWorker: boolean = false;
 
   #csvTableRef: Ref<CsvTable> = createRef();
+  #progressRef: Ref<HTMLProgressElement> = createRef();
 
   #appendRows(rows: unknown[][]) {
     this.#csvTableRef.value?.appendRows(rows);
@@ -28,6 +29,8 @@ export class CsvView extends AppStyledElement(LitElement) {
     this.#csvTableRef.value?.clearRows();
   }
 
+  #streamChunkSize = 100 * 1024; // 100kb
+
   protected firstUpdated(): void {
     if (this.disableStreaming || !this.file) {
       return;
@@ -35,18 +38,23 @@ export class CsvView extends AppStyledElement(LitElement) {
 
     this.#clearRows();
 
+    const progress = this.#progressRef.value || { value: 0, max: 0 };
+
     const file = this.file;
     Papa.parse(file, {
-      complete: () => {},
+      complete: () => {
+        progress.value = 0;
+      },
       error: (e) => {
         console.error(e);
       },
       worker: this.useWorker,
       skipEmptyLines: true,
       header: false,
-      chunkSize: 100 * 1024, // 100kb
+      chunkSize: this.#streamChunkSize,
       chunk: (results) => {
         this.#appendRows(results.data as unknown[][]);
+        progress.value += this.#streamChunkSize / 2;
       },
     });
   }
@@ -89,6 +97,14 @@ export class CsvView extends AppStyledElement(LitElement) {
       });
     }
 
-    return html`<csv-table ${ref(this.#csvTableRef)}></csv-table> `;
+    return html`
+      <progress
+        ${ref(this.#progressRef)}
+        class="progress block h-0.5 bg-base-100 sticky top-[1px] z-10"
+        value="0"
+        max=${this.file?.size ?? 0}
+      ></progress>
+      <csv-table ${ref(this.#csvTableRef)}></csv-table>
+    `;
   }
 }
