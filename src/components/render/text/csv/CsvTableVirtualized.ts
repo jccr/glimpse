@@ -1,5 +1,6 @@
 import { html, css, LitElement } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { virtualize } from "@lit-labs/virtualizer/virtualize.js";
 import { AppStyledElement } from "@/components/AppStyledElement";
 import { hasHeaders } from "./lib/csvHeaderHeuristics";
 
@@ -7,11 +8,6 @@ import { hasHeaders } from "./lib/csvHeaderHeuristics";
 export class CsvTable extends AppStyledElement(
   LitElement,
   css`
-    tr {
-      /* boost rendering performance for huge amounts of rows */
-      content-visibility: auto;
-      contain-intrinsic-size: auto 3em;
-    }
     .index-column {
       width: 1em;
     }
@@ -42,32 +38,38 @@ export class CsvTable extends AppStyledElement(
 
   protected render(): unknown {
     return html`<div>
-      <table class="table table-pin-rows table-pin-cols">
+      <table class="table w-full table-pin-rows table-pin-cols">
         ${this.hasHeaders
-          ? html`<thead>
-              <tr>
-                <th></th>
-                ${this.firstRow?.map((header) => html`<td>${header}</td>`)}
-                <th></th>
+          ? html`<thead class="relative block w-screen">
+              <tr class="w-full">
+                <th class="index-column"></th>
+                ${this.firstRow?.map(
+                  (header) => html`<td class="w-full">${header}</td>`,
+                )}
+                <th class="index-column"></th>
               </tr>
             </thead>`
           : null}
-        <tbody>
-          ${this.rows.map(
-            (row, index) =>
-              html`<tr>
+        <tbody class="w-screen !min-h-screen">
+          ${virtualize({
+            scroller: true,
+            items: this.rows,
+            renderItem: (row, index) =>
+              html`<tr class="w-full">
                 <th class="index-column">${index + 1}</th>
-                ${row.map((cell) => html`<td>${cell}</td>`)}
+                ${row.map((cell) => html`<td class="w-full">${cell}</td>`)}
                 <th class="index-column">${index + 1}</th>
               </tr>`,
-          )}
+          })}
         </tbody>
         ${this.hasHeaders
-          ? html`<tfoot>
-              <tr>
-                <th></th>
-                ${this.firstRow?.map((header) => html`<td>${header}</td>`)}
-                <th></th>
+          ? html`<tfoot class="relative block w-screen">
+              <tr class="w-full">
+                <th class="index-column"></th>
+                ${this.firstRow?.map(
+                  (header) => html`<td class="w-full">${header}</td>`,
+                )}
+                <th class="index-column"></th>
               </tr>
             </tfoot>`
           : null}

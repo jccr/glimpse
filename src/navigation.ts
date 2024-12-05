@@ -1,6 +1,6 @@
 import { Router } from "@lit-labs/router";
 
-export function navigate(path: string) {
+export function navigate(path: string | URL) {
   globalThis.history.pushState(null, "", path);
 }
 
@@ -12,8 +12,8 @@ export function initNavigation(router: Router) {
       argArray: [
         data: any,
         unused: string,
-        url?: string | URL | null | undefined
-      ]
+        url?: string | URL | null | undefined,
+      ],
     ) => {
       const url = argArray[2];
       if (url instanceof URL) {

@@ -8,11 +8,7 @@ export class StartPage extends AppStyledElement(LitElement) {
   protected render(): unknown {
     return html`
       <div class="p-8 w-full h-full">
-        <file-drop
-          @file=${(e: CustomEvent) => {
-            this.dispatchEvent(new CustomEvent("file", { detail: e.detail }));
-          }}
-        ></file-drop>
+        <file-drop></file-drop>
       </div>
     `;
   }

@@ -37,17 +37,27 @@ export class FileDrop extends AppStyledElement(
         : "copy";
   }
 
+  private dispatchFileDrop(file: File | null) {
+    this.dispatchEvent(
+      new CustomEvent("file-drop", {
+        detail: file,
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
   protected onDrop(event: DragEvent) {
     event.preventDefault();
     this.iconRef.value?.classList.remove("drag-hover");
     this.file = event.dataTransfer?.files[0] || null;
-    this.dispatchEvent(new CustomEvent("file", { detail: this.file }));
+    this.dispatchFileDrop(this.file);
   }
 
   protected onFileChange(event: Event) {
     const input = event.target as HTMLInputElement;
     this.file = input.files?.[0] || null;
-    this.dispatchEvent(new CustomEvent("file", { detail: this.file }));
+    this.dispatchFileDrop(this.file);
   }
 
   protected render(): unknown {

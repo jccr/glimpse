@@ -1,59 +1,55 @@
-import { Router, PathRouteConfig } from "@lit-labs/router";
+import { Router, RouteConfig } from "@lit-labs/router";
 import { AppStyledElement } from "./AppStyledElement";
-import { ref, createRef, Ref } from "lit/directives/ref.js";
 import { html, LitElement } from "lit";
 import { customElement } from "lit/decorators.js";
 import "./ThemeSelector";
 import "./Icon";
 import "./pages/StartPage";
-import "./render/text/csv/CsvTable";
-import { initNavigation } from "../navigation";
-import { CsvTable } from "./render/text/csv/CsvTable";
-import Papa from "papaparse";
+import { initNavigation, navigate } from "../navigation";
 
 @customElement("x-app")
 export class Application extends AppStyledElement(LitElement) {
-  _file: File | null = null;
+  #files: Map<string, File> = new Map();
 
-  get file(): File | null {
-    return this._file;
-  }
-
-  csvTableRef: Ref<CsvTable> = createRef();
-
-  set file(file: File | null) {
-    console.log("file", file);
-    if (!file) return;
-
-    Papa.parse(file, {
-      complete: (results) => {
-        if (!this.csvTableRef.value) return;
-        this.csvTableRef.value.data = results.data as string[][];
-      },
-    });
-
-    // const reader = new FileReader();
-    // reader.onload = () => {};
-    // reader.readAsText(file);
-  }
-
-  private routes: PathRouteConfig[] = [
+  private routes: RouteConfig[] = [
     {
       path: "/",
       name: "Start",
       render: () => html`
         <start-page
-          @file=${(e: CustomEvent) => {
-            this.router.goto("/csv");
-            this.file = e.detail;
+          @file-drop=${(e: CustomEvent) => {
+            const file = e.detail as File;
+            const key = `${file.name ?? "file"}/${file.lastModified ?? file.size}`;
+            this.#files.set(key, file);
+            navigate(`/${file.type}/${key}`);
           }}
         ></start-page>
       `,
     },
     {
-      path: "/csv",
-      name: "CSV",
-      render: () => html`<csv-table ${ref(this.csvTableRef)}></csv-table>`,
+      path: "/text/csv/:name/:lastModified",
+      name: "CSV Preview",
+      enter: async () => {
+        await import("./render/text/csv/CsvViewStreamed");
+        return true;
+      },
+      render: ({ name, lastModified }) => {
+        const file = this.#files.get(`${name}/${lastModified}`);
+        if (!file) {
+          navigate("/error");
+          return;
+        }
+
+        return html`<csv-view .file=${file}></csv-view>`;
+      },
+    },
+    {
+      path: "/error",
+      render: () => html`UNKNOWN ERROR`,
+    },
+    {
+      path: "/*",
+      render: () => html`UNKNOWN ROUTE`,
     },
   ];
 
@@ -64,7 +60,7 @@ export class Application extends AppStyledElement(LitElement) {
       <div class="grid grid-rows-[auto_1fr] h-screen">
         <div class="navbar bg-base-300 z-10">
           <div class="flex-1">
-            <a class="btn btn-ghost text-xl">glimpse</a>
+            <a href="/" class="btn btn-ghost text-xl">glimpse</a>
           </div>
           <div class="flex-none">
             <theme-selector></theme-selector>
