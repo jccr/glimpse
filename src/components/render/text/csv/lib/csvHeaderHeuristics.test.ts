@@ -4,7 +4,7 @@ import {
   checkNonNumeric,
   checkColumnConsistency,
   checkStatisticalVariance,
-  hasHeaders,
+  hasHeader,
 } from "./csvHeaderHeuristics";
 
 describe("CSV Header Heuristics", () => {
@@ -62,7 +62,7 @@ describe("CSV Header Heuristics", () => {
       expect(checkColumnConsistency(header, sampleRows[0])).toBe(true);
       expect(checkStatisticalVariance(header, sampleRows)).toBe(true);
 
-      expect(hasHeaders(header, sampleRows)).toBe(true);
+      expect(hasHeader(header, sampleRows)).toBe(true);
     });
 
     test("CSV without headers", () => {
@@ -76,7 +76,7 @@ describe("CSV Header Heuristics", () => {
       expect(checkColumnConsistency(nonHeader, sampleRows[0])).toBe(false);
       expect(checkStatisticalVariance(nonHeader, sampleRows)).toBe(false);
 
-      expect(hasHeaders(nonHeader, sampleRows)).toBe(false);
+      expect(hasHeader(nonHeader, sampleRows)).toBe(false);
     });
   });
 });

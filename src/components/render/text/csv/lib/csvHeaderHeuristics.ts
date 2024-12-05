@@ -33,18 +33,9 @@ export function checkStatisticalVariance(firstRow: Row, sampleRows: Row[]) {
   return variance > sampleRows.length / 2;
 }
 
-export function hasHeaders(firstRow: Row, sampleRows: Row[]) {
-  console.log(firstRow, sampleRows);
+export function hasHeader(firstRow: Row, sampleRows: Row[]) {
   const nonNumeric = checkNonNumeric(firstRow);
   const columnConsistency = checkColumnConsistency(firstRow, sampleRows[0]);
   const statisticalVariance = checkStatisticalVariance(firstRow, sampleRows);
-  console.log(
-    "nonNumeric",
-    nonNumeric,
-    "columnConsistency",
-    columnConsistency,
-    "statisticalVariance",
-    statisticalVariance,
-  );
   return nonNumeric && columnConsistency && statisticalVariance;
 }

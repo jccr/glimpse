@@ -30,7 +30,7 @@ export class Application extends AppStyledElement(LitElement) {
       path: "/text/csv/:name/:lastModified",
       name: "CSV Preview",
       enter: async () => {
-        await import("./render/text/csv/CsvViewStreamed");
+        await import("./render/text/csv/CsvView");
         return true;
       },
       render: ({ name, lastModified }) => {
