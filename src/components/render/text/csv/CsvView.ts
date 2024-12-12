@@ -12,6 +12,8 @@ export class CsvView extends AppStyledElement(LitElement) {
   @property({ type: File, attribute: false })
   file: File | null = null;
 
+  #streamChunkSize = 100 * 1024; // 100kb
+
   @property({ type: Boolean, attribute: "disable-streaming" })
   disableStreaming: boolean = false;
 
@@ -29,9 +31,7 @@ export class CsvView extends AppStyledElement(LitElement) {
     this.#csvTableRef.value?.clearRows();
   }
 
-  #streamChunkSize = 100 * 1024; // 100kb
-
-  protected firstUpdated(): void {
+  protected firstUpdated() {
     if (this.disableStreaming || !this.file) {
       return;
     }
@@ -54,7 +54,7 @@ export class CsvView extends AppStyledElement(LitElement) {
       chunkSize: this.#streamChunkSize,
       chunk: (results) => {
         this.#appendRows(results.data as unknown[][]);
-        progress.value += this.#streamChunkSize / 2;
+        progress.value += this.#streamChunkSize;
       },
     });
   }

@@ -19,7 +19,7 @@ export class Application extends AppStyledElement(LitElement) {
         <start-page
           @file-drop=${(e: CustomEvent) => {
             const file = e.detail as File;
-            const key = `${file.name ?? "file"}/${file.lastModified ?? file.size}`;
+            const key = `${encodeURIComponent(file.name) ?? "file"}/${file.lastModified ?? file.size}`;
             this.#files.set(key, file);
             navigate(`/${file.type}/${key}`);
           }}
@@ -41,6 +41,23 @@ export class Application extends AppStyledElement(LitElement) {
         }
 
         return html`<csv-view .file=${file}></csv-view>`;
+      },
+    },
+    {
+      path: "/text/html/:name/:lastModified",
+      name: "HTML Preview",
+      enter: async () => {
+        await import("./render/text/CodeView");
+        return true;
+      },
+      render: ({ name, lastModified }) => {
+        const file = this.#files.get(`${name}/${lastModified}`);
+        if (!file) {
+          navigate("/error");
+          return;
+        }
+
+        return html`<code-view .file=${file}></code-view>`;
       },
     },
     {
