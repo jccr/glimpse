@@ -1,4 +1,8 @@
 import { html, css, LitElement } from "lit";
+// import { createHighlighter } from "shiki";
+import { createHighlighterCore } from "shiki/core";
+// import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
+import { createOnigurumaEngine } from "shiki/engine/oniguruma";
 import { ref, createRef, Ref } from "lit/directives/ref.js";
 import { customElement, property } from "lit/decorators.js";
 import { AppStyledElement } from "@/components/AppStyledElement";
@@ -34,12 +38,32 @@ async function* makeTextFileLineIterator(file: File) {
   }
 }
 
+function queueRequestAnimationFrame<T>(fn: () => T): Promise<T> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      resolve(fn());
+    });
+  });
+}
+
+function doubleUntilMax(initialValue = 50, maxValue = 1000) {
+  let currentValue = initialValue;
+
+  return function () {
+    if (currentValue >= maxValue) {
+      return maxValue;
+    }
+
+    currentValue *= 2;
+    return currentValue;
+  };
+}
+
 @customElement("code-view")
 export class CodeView extends AppStyledElement(
   LitElement,
   css`
-    div {
-      display: block;
+    .line {
       /* boost rendering performance for huge amounts of lines */
       content-visibility: auto;
       contain-intrinsic-size: auto 1.5em;
@@ -49,11 +73,16 @@ export class CodeView extends AppStyledElement(
   @property({ type: File, attribute: false })
   file: File | null = null;
 
-  #streamChunkSize = 100 * 1024; // 100kb
-  #lineBufferSize = 1000;
+  #firstBufferSize = 50;
+  #lineBufferSize = 5000;
+
+  #getBufferSize = doubleUntilMax(this.#firstBufferSize, this.#lineBufferSize);
 
   @property({ type: String })
-  language: string = "plaintext";
+  language: string = "text";
+
+  @property({ type: String })
+  theme: string = "github-dark";
 
   #codeRef: Ref<HTMLElement> = createRef();
   #progressRef: Ref<HTMLProgressElement> = createRef();
@@ -62,26 +91,15 @@ export class CodeView extends AppStyledElement(
     this.#codeRef.value?.replaceChildren();
   }
 
-  #appendChunk(chunk: string): Promise<void> {
-    return new Promise((resolve) => {
-      requestAnimationFrame(() => {
-        const documentFragment = this.ownerDocument.createDocumentFragment();
-        const div = document.createElement("div");
-        div.textContent = chunk;
-        documentFragment.appendChild(div);
-        this.#codeRef.value?.appendChild(documentFragment);
-        resolve();
-      });
-    });
+  #abort = false;
+
+  async #appendFragment(fragment: DocumentFragment) {
+    this.#codeRef.value?.appendChild(fragment);
   }
 
-  #appendFragment(fragment: DocumentFragment): Promise<void> {
-    return new Promise((resolve) => {
-      requestAnimationFrame(() => {
-        this.#codeRef.value?.appendChild(fragment);
-        resolve();
-      });
-    });
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.#abort = true;
   }
 
   protected async firstUpdated() {
@@ -89,61 +107,92 @@ export class CodeView extends AppStyledElement(
       return;
     }
 
+    const highlighter = await createHighlighterCore({
+      themes: [import(`shiki/dist/themes/${this.theme}.mjs`)],
+      langs:
+        this.language === "text"
+          ? []
+          : [import(`shiki/dist/langs/${this.language}.mjs`)],
+      // engine: createJavaScriptRegexEngine({ forgiving: true }),
+      engine: createOnigurumaEngine(import("shiki/wasm")),
+    });
+
     this.#clear();
+
     const progress = this.#progressRef.value || { value: 0, max: 0 };
+    progress.value = progress.max / 90;
 
     let documentFragment = this.ownerDocument.createDocumentFragment();
 
+    const domParser = new DOMParser();
+
+    let lines: string[] = [];
+    let firstRender = true;
+
+    const appendLines = (language = this.language) => {
+      if (!lines.length) {
+        return;
+      }
+      const code = lines.join("\n");
+      console.log(lines.length);
+      const html = highlighter.codeToHtml(code, {
+        theme: this.theme,
+        lang: language,
+      });
+      const doc = domParser.parseFromString(html, "text/html");
+      documentFragment.append(...doc.body.childNodes);
+    };
+
+    let bufferSize = this.#getBufferSize();
+
     for await (let line of makeTextFileLineIterator(this.file)) {
-      const div = document.createElement("div");
-      div.textContent = line;
-      documentFragment.appendChild(div);
-      if (documentFragment.children.length >= this.#lineBufferSize) {
-        await this.#appendFragment(documentFragment);
-        documentFragment = this.ownerDocument.createDocumentFragment();
+      if (this.#abort) {
+        return;
+      }
+
+      lines.push(line);
+      if (lines.length >= bufferSize) {
+        if (firstRender) {
+          console.time("append preview");
+          await queueRequestAnimationFrame(async () => {
+            appendLines("text");
+            await this.#appendFragment(documentFragment);
+            documentFragment = this.ownerDocument.createDocumentFragment();
+            console.timeEnd("append preview");
+          });
+        }
+        bufferSize = this.#getBufferSize();
+        console.time("append");
+        await queueRequestAnimationFrame(async () => {
+          appendLines();
+          if (firstRender) {
+            this.#clear();
+          }
+          await this.#appendFragment(documentFragment);
+          documentFragment = this.ownerDocument.createDocumentFragment();
+          lines = [];
+          console.timeEnd("append");
+        });
+
+        firstRender = false;
       }
       progress.value += line.length;
     }
 
-    if (documentFragment.children.length) {
-      await this.#appendFragment(documentFragment);
+    if (lines.length) {
+      console.time("append last");
+      await queueRequestAnimationFrame(async () => {
+        appendLines();
+        await this.#appendFragment(documentFragment);
+        documentFragment = this.ownerDocument.createDocumentFragment();
+        lines = [];
+        console.timeEnd("append last");
+      });
+
+      firstRender = false;
     }
 
-    progress.value = this.file.size;
-
-    // const stream = this.file.stream();
-    // const reader = stream.getReader();
-    // const utf8Decoder = new TextDecoder("utf-8");
-
-    // let totalRead = 0;
-    // let chunk = "";
-    // let chunkLength = 0;
-
-    // while (true) {
-    //   const { done, value } = await reader.read();
-
-    //   if (done) {
-    //     if (chunkLength) {
-    //       await this.#appendChunk(chunk);
-    //       progress.value += chunkLength;
-    //     }
-    //     console.log("Done!");
-    //     // progress.value = 0;
-    //     break;
-    //   }
-
-    //   totalRead += value.length;
-    //   chunkLength += value.length;
-    //   const decoded = utf8Decoder.decode(value, { stream: true });
-    //   chunk += decoded;
-
-    //   if (chunkLength > this.#streamChunkSize) {
-    //     await this.#appendChunk(chunk);
-    //     progress.value += chunkLength;
-    //     chunk = "";
-    //     chunkLength = 0;
-    //   }
-    // }
+    progress.value = 0; // finished
   }
 
   render() {

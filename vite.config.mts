@@ -2,6 +2,7 @@ import path from "path";
 import { defineConfig } from "vite";
 import compression from "vite-plugin-compression";
 import Sitemap from "vite-plugin-sitemap";
+import dynamicImport from "vite-plugin-dynamic-import";
 
 export default defineConfig({
   resolve: {
@@ -13,6 +14,13 @@ export default defineConfig({
     target: "esnext",
   },
   plugins: [
+    dynamicImport({
+      filter(id) {
+        if (id.includes("/node_modules/shiki")) {
+          return true;
+        }
+      },
+    }),
     compression({
       // Optional configuration options
       verbose: true, // Enable verbose logging

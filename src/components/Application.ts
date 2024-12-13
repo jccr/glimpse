@@ -57,7 +57,7 @@ export class Application extends AppStyledElement(LitElement) {
           return;
         }
 
-        return html`<code-view .file=${file}></code-view>`;
+        return html`<code-view .file=${file} language="html"></code-view>`;
       },
     },
     {
