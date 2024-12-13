@@ -1,7 +1,5 @@
 import { html, css, LitElement } from "lit";
-// import { createHighlighter } from "shiki";
 import { createHighlighterCore } from "shiki/core";
-// import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import { createOnigurumaEngine } from "shiki/engine/oniguruma";
 import { ref, createRef, Ref } from "lit/directives/ref.js";
 import { customElement, property } from "lit/decorators.js";
@@ -74,7 +72,7 @@ export class CodeView extends AppStyledElement(
   file: File | null = null;
 
   #firstBufferSize = 50;
-  #lineBufferSize = 5000;
+  #lineBufferSize = 3200;
 
   #getBufferSize = doubleUntilMax(this.#firstBufferSize, this.#lineBufferSize);
 
@@ -113,34 +111,31 @@ export class CodeView extends AppStyledElement(
         this.language === "text"
           ? []
           : [import(`shiki/dist/langs/${this.language}.mjs`)],
-      // engine: createJavaScriptRegexEngine({ forgiving: true }),
       engine: createOnigurumaEngine(import("shiki/wasm")),
     });
+    const domParser = new DOMParser();
 
     this.#clear();
 
     const progress = this.#progressRef.value || { value: 0, max: 0 };
     progress.value = progress.max / 90;
 
-    let documentFragment = this.ownerDocument.createDocumentFragment();
-
-    const domParser = new DOMParser();
-
     let lines: string[] = [];
     let firstRender = true;
 
-    const appendLines = (language = this.language) => {
+    const createFragmentFromLines = (language = this.language) => {
+      const documentFragment = this.ownerDocument.createDocumentFragment();
       if (!lines.length) {
-        return;
+        return documentFragment;
       }
       const code = lines.join("\n");
-      console.log(lines.length);
       const html = highlighter.codeToHtml(code, {
         theme: this.theme,
         lang: language,
       });
       const doc = domParser.parseFromString(html, "text/html");
       documentFragment.append(...doc.body.childNodes);
+      return documentFragment;
     };
 
     let bufferSize = this.#getBufferSize();
@@ -155,21 +150,19 @@ export class CodeView extends AppStyledElement(
         if (firstRender) {
           console.time("append preview");
           await queueRequestAnimationFrame(async () => {
-            appendLines("text");
-            await this.#appendFragment(documentFragment);
-            documentFragment = this.ownerDocument.createDocumentFragment();
+            const previewFragment = createFragmentFromLines("text");
+            await this.#appendFragment(previewFragment);
             console.timeEnd("append preview");
           });
         }
         bufferSize = this.#getBufferSize();
         console.time("append");
         await queueRequestAnimationFrame(async () => {
-          appendLines();
+          const highlightedFragment = createFragmentFromLines();
           if (firstRender) {
-            this.#clear();
+            this.#clear(); // clear preview
           }
-          await this.#appendFragment(documentFragment);
-          documentFragment = this.ownerDocument.createDocumentFragment();
+          await this.#appendFragment(highlightedFragment);
           lines = [];
           console.timeEnd("append");
         });
@@ -182,9 +175,8 @@ export class CodeView extends AppStyledElement(
     if (lines.length) {
       console.time("append last");
       await queueRequestAnimationFrame(async () => {
-        appendLines();
-        await this.#appendFragment(documentFragment);
-        documentFragment = this.ownerDocument.createDocumentFragment();
+        const highlightedFragment = createFragmentFromLines();
+        await this.#appendFragment(highlightedFragment);
         lines = [];
         console.timeEnd("append last");
       });
