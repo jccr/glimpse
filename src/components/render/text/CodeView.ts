@@ -130,32 +130,66 @@ export class CodeView extends AppStyledElement(
       return fragment;
     };
 
+    const tagRegex = /<[^>]+>/;
+    const isXmlLike =
+      this.language.includes("xml") || this.language.includes("html");
+
+    let skipUntilTag = false;
+
     for await (const line of makeTextFileLineIterator(this.file)) {
-      if (this.#abortRendering) return;
+      if (this.#abortRendering) {
+        return;
+      }
 
       lines.push(line);
       progressBar.value += line.length;
 
-      if (lines.length >= bufferSize) {
-        if (isFirstRender) {
-          await queueRequestAnimationFrame(() => {
-            const previewFragment = createFragment(lines, "text");
-            this.#appendToContainer(previewFragment);
-          });
-        }
-
-        await queueRequestAnimationFrame(() => {
-          const codeFragment = createFragment(lines);
-          if (isFirstRender) {
-            this.#clearContainer();
-            isFirstRender = false;
-          }
-          this.#appendToContainer(codeFragment);
-          lines = [];
-        });
-
-        bufferSize = this.#calculateBufferSize();
+      if (isXmlLike && !tagRegex.test(line)) {
+        console.log(line, skipUntilTag, "not tag");
+        continue;
       }
+
+      if (isXmlLike && !skipUntilTag && tagRegex.test(line)) {
+        skipUntilTag = true;
+        console.log(line, skipUntilTag, "tag start?");
+        continue;
+      }
+
+      if (skipUntilTag && tagRegex.test(line)) {
+        skipUntilTag = false;
+        console.log(line, skipUntilTag, "tag end?");
+      }
+
+      if (skipUntilTag) {
+        console.log(line, skipUntilTag, "skipping");
+        continue;
+      }
+
+      if (lines.length < bufferSize) {
+        console.log(line, skipUntilTag, "buffering");
+        continue;
+      }
+
+      console.log(line, skipUntilTag, "rendering");
+
+      if (isFirstRender) {
+        await queueRequestAnimationFrame(() => {
+          const previewFragment = createFragment(lines, "text");
+          this.#appendToContainer(previewFragment);
+        });
+      }
+
+      await queueRequestAnimationFrame(() => {
+        const codeFragment = createFragment(lines);
+        if (isFirstRender) {
+          this.#clearContainer();
+          isFirstRender = false;
+        }
+        this.#appendToContainer(codeFragment);
+        lines = [];
+      });
+
+      bufferSize = this.#calculateBufferSize();
     }
 
     if (lines.length) {
