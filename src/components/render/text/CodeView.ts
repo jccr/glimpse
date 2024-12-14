@@ -133,45 +133,47 @@ export class CodeView extends AppStyledElement(
     const tagRegex = /<[^>]+>/;
     const isXmlLike =
       this.language.includes("xml") || this.language.includes("html");
-
-    let skipUntilTag = false;
+    let bufferUntilTag = false;
 
     for await (const line of makeTextFileLineIterator(this.file)) {
-      if (this.#abortRendering) {
-        return;
-      }
+      if (this.#abortRendering) return;
 
       lines.push(line);
       progressBar.value += line.length;
 
-      if (isXmlLike && !tagRegex.test(line)) {
-        console.log(line, skipUntilTag, "not tag");
-        continue;
+      // Handle buffering for XML-like lines
+      if (isXmlLike) {
+        const lineHasTag = tagRegex.test(line);
+        // Buffer until a tag is found
+        if (!lineHasTag) {
+          continue;
+        }
+
+        // Handle starting tags
+        if (!bufferUntilTag && lineHasTag) {
+          bufferUntilTag = true;
+          continue;
+        }
+
+        // Handle ending tags
+        if (bufferUntilTag && lineHasTag) {
+          bufferUntilTag = false;
+        }
+
+        // Buffer lines within tags
+        if (bufferUntilTag) {
+          continue;
+        }
       }
 
-      if (isXmlLike && !skipUntilTag && tagRegex.test(line)) {
-        skipUntilTag = true;
-        console.log(line, skipUntilTag, "tag start?");
-        continue;
-      }
-
-      if (skipUntilTag && tagRegex.test(line)) {
-        skipUntilTag = false;
-        console.log(line, skipUntilTag, "tag end?");
-      }
-
-      if (skipUntilTag) {
-        console.log(line, skipUntilTag, "skipping");
-        continue;
-      }
-
+      // Buffer until bufferSize is reached
       if (lines.length < bufferSize) {
-        console.log(line, skipUntilTag, "buffering");
         continue;
       }
 
-      console.log(line, skipUntilTag, "rendering");
+      // Render buffered lines:
 
+      // Render preview fragment on first render
       if (isFirstRender) {
         await queueRequestAnimationFrame(() => {
           const previewFragment = createFragment(lines, "text");
@@ -179,12 +181,16 @@ export class CodeView extends AppStyledElement(
         });
       }
 
+      // Render code fragment
       await queueRequestAnimationFrame(() => {
         const codeFragment = createFragment(lines);
+
+        // Clean up preview fragment
         if (isFirstRender) {
           this.#clearContainer();
           isFirstRender = false;
         }
+
         this.#appendToContainer(codeFragment);
         lines = [];
       });
@@ -192,6 +198,7 @@ export class CodeView extends AppStyledElement(
       bufferSize = this.#calculateBufferSize();
     }
 
+    // Render remaining lines
     if (lines.length) {
       await queueRequestAnimationFrame(() => {
         const finalFragment = createFragment(lines);
@@ -200,7 +207,8 @@ export class CodeView extends AppStyledElement(
       });
     }
 
-    progressBar.value = 0; // Rendering completed
+    // Rendering completed
+    progressBar.value = 0;
   }
 
   protected async firstUpdated() {
