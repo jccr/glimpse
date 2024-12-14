@@ -1,5 +1,5 @@
 import { html, css, LitElement } from "lit";
-import { createHighlighterCore } from "shiki/core";
+import { createHighlighterCore, HighlighterCore } from "shiki/core";
 import { createOnigurumaEngine } from "shiki/engine/oniguruma";
 import { ref, createRef, Ref } from "lit/directives/ref.js";
 import { customElement, property } from "lit/decorators.js";
@@ -38,20 +38,14 @@ async function* makeTextFileLineIterator(file: File) {
 
 function queueRequestAnimationFrame<T>(fn: () => T): Promise<T> {
   return new Promise((resolve) => {
-    requestAnimationFrame(() => {
-      resolve(fn());
-    });
+    requestAnimationFrame(() => resolve(fn()));
   });
 }
 
-function doubleUntilMax(initialValue = 50, maxValue = 1000) {
+function createExponentialBackoff(initialValue: number, maxValue: number) {
   let currentValue = initialValue;
-
-  return function () {
-    if (currentValue >= maxValue) {
-      return maxValue;
-    }
-
+  return () => {
+    if (currentValue >= maxValue) return maxValue;
     currentValue *= 2;
     return currentValue;
   };
@@ -62,7 +56,6 @@ export class CodeView extends AppStyledElement(
   LitElement,
   css`
     .line {
-      /* boost rendering performance for huge amounts of lines */
       content-visibility: auto;
       contain-intrinsic-size: auto 1.5em;
     }
@@ -71,41 +64,38 @@ export class CodeView extends AppStyledElement(
   @property({ type: File, attribute: false })
   file: File | null = null;
 
-  #firstBufferSize = 50;
-  #lineBufferSize = 3200;
-
-  #getBufferSize = doubleUntilMax(this.#firstBufferSize, this.#lineBufferSize);
+  #initialBufferSize = 50;
+  #maxBufferSize = 3200;
+  #calculateBufferSize = createExponentialBackoff(
+    this.#initialBufferSize,
+    this.#maxBufferSize,
+  );
 
   @property({ type: String })
-  language: string = "text";
+  language = "text";
 
   @property({ type: String })
-  theme: string = "github-dark";
+  theme = "github-dark";
 
-  #codeRef: Ref<HTMLElement> = createRef();
-  #progressRef: Ref<HTMLProgressElement> = createRef();
+  #container: Ref<HTMLElement> = createRef();
+  #progressBar: Ref<HTMLProgressElement> = createRef();
+  #abortRendering = false;
 
-  #clear() {
-    this.#codeRef.value?.replaceChildren();
-  }
-
-  #abort = false;
-
-  async #appendFragment(fragment: DocumentFragment) {
-    this.#codeRef.value?.appendChild(fragment);
+  #clearContainer() {
+    this.#container.value?.replaceChildren();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this.#abort = true;
+    this.#abortRendering = true;
   }
 
-  protected async firstUpdated() {
-    if (!this.file) {
-      return;
-    }
+  async #appendToContainer(node: Node) {
+    this.#container.value?.appendChild(node);
+  }
 
-    const highlighter = await createHighlighterCore({
+  async #initializeHighlighter() {
+    return createHighlighterCore({
       themes: [import(`shiki/dist/themes/${this.theme}.mjs`)],
       langs:
         this.language === "text"
@@ -113,88 +103,89 @@ export class CodeView extends AppStyledElement(
           : [import(`shiki/dist/langs/${this.language}.mjs`)],
       engine: createOnigurumaEngine(import("shiki/wasm")),
     });
-    const domParser = new DOMParser();
+  }
 
-    this.#clear();
+  async #renderLines(highlighter: HighlighterCore, domParser: DOMParser) {
+    if (!this.file) return;
 
-    const progress = this.#progressRef.value || { value: 0, max: 0 };
-    progress.value = progress.max / 90;
+    this.#clearContainer();
+    const progressBar = this.#progressBar.value || { value: 0, max: 0 };
+    progressBar.value = 0;
+    progressBar.max = this.file.size;
 
     let lines: string[] = [];
-    let firstRender = true;
+    let isFirstRender = true;
+    let bufferSize = this.#calculateBufferSize();
 
-    const createFragmentFromLines = (language = this.language) => {
-      const documentFragment = this.ownerDocument.createDocumentFragment();
-      if (!lines.length) {
-        return documentFragment;
-      }
-      const code = lines.join("\n");
-      const html = highlighter.codeToHtml(code, {
+    const createFragment = (codeLines: string[], language = this.language) => {
+      const fragment = document.createDocumentFragment();
+      if (!codeLines.length) return fragment;
+      const codeText = codeLines.join("\n");
+      const htmlText = highlighter.codeToHtml(codeText, {
         theme: this.theme,
         lang: language,
       });
-      const doc = domParser.parseFromString(html, "text/html");
-      documentFragment.append(...doc.body.childNodes);
-      return documentFragment;
+      const parsedDocument = domParser.parseFromString(htmlText, "text/html");
+      fragment.append(...parsedDocument.body.childNodes);
+      return fragment;
     };
 
-    let bufferSize = this.#getBufferSize();
-
-    for await (let line of makeTextFileLineIterator(this.file)) {
-      if (this.#abort) {
-        return;
-      }
+    for await (const line of makeTextFileLineIterator(this.file)) {
+      if (this.#abortRendering) return;
 
       lines.push(line);
+      progressBar.value += line.length;
+
       if (lines.length >= bufferSize) {
-        if (firstRender) {
-          console.time("append preview");
-          await queueRequestAnimationFrame(async () => {
-            const previewFragment = createFragmentFromLines("text");
-            await this.#appendFragment(previewFragment);
-            console.timeEnd("append preview");
+        if (isFirstRender) {
+          await queueRequestAnimationFrame(() => {
+            const previewFragment = createFragment(lines, "text");
+            this.#appendToContainer(previewFragment);
           });
         }
-        bufferSize = this.#getBufferSize();
-        console.time("append");
-        await queueRequestAnimationFrame(async () => {
-          const highlightedFragment = createFragmentFromLines();
-          if (firstRender) {
-            this.#clear(); // clear preview
+
+        await queueRequestAnimationFrame(() => {
+          const codeFragment = createFragment(lines);
+          if (isFirstRender) {
+            this.#clearContainer();
+            isFirstRender = false;
           }
-          await this.#appendFragment(highlightedFragment);
+          this.#appendToContainer(codeFragment);
           lines = [];
-          console.timeEnd("append");
         });
 
-        firstRender = false;
+        bufferSize = this.#calculateBufferSize();
       }
-      progress.value += line.length;
     }
 
     if (lines.length) {
-      console.time("append last");
-      await queueRequestAnimationFrame(async () => {
-        const highlightedFragment = createFragmentFromLines();
-        await this.#appendFragment(highlightedFragment);
+      await queueRequestAnimationFrame(() => {
+        const finalFragment = createFragment(lines);
+        this.#appendToContainer(finalFragment);
         lines = [];
-        console.timeEnd("append last");
       });
-
-      firstRender = false;
     }
 
-    progress.value = 0; // finished
+    progressBar.value = 0; // Rendering completed
+  }
+
+  protected async firstUpdated() {
+    if (!this.file) return;
+
+    const highlighter = await this.#initializeHighlighter();
+    const domParser = new DOMParser();
+    this.#renderLines(highlighter, domParser);
   }
 
   render() {
-    return html`<progress
-        ${ref(this.#progressRef)}
+    return html`
+      <progress
+        ${ref(this.#progressBar)}
         class="progress block h-0.5 bg-base-100 fixed top-[1px] z-10"
         value="0"
         max=${this.file?.size ?? 0}
       ></progress>
-      <pre class="p-2"><code ${ref(this.#codeRef)} class="language-${this
-        .language}"></code></pre>`;
+      <div ${ref(this.#container)} class="p-2"></div>
+    `;
   }
 }
