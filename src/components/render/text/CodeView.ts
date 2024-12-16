@@ -31,7 +31,7 @@ async function* makeTextFileLineIterator(file: File) {
     startIndex = lineBreakPattern.lastIndex;
   }
 
-  if (startIndex < decodedChunk.length) {
+  if (startIndex <= decodedChunk.length) {
     yield decodedChunk.slice(startIndex);
   }
 }
@@ -55,27 +55,43 @@ function createExponentialBackoff(initialValue: number, maxValue: number) {
 export class CodeView extends AppStyledElement(
   LitElement,
   css`
-    .line {
+    code .line {
       content-visibility: auto;
       contain-intrinsic-size: auto 1.5em;
+    }
+
+    code .line span {
+      display: inline-block;
+    }
+
+    code .line .number {
+      display: inline-block;
+      width: var(--line-num-width, 1.5rem);
+      margin-right: 1.5rem;
+      text-align: right;
+      color: rgba(115, 138, 148, 0.4);
+      user-select: none;
     }
   `,
 ) {
   @property({ type: File, attribute: false })
   file: File | null = null;
 
-  #initialBufferSize = 50;
-  #maxBufferSize = 3200;
-  #calculateBufferSize = createExponentialBackoff(
-    this.#initialBufferSize,
-    this.#maxBufferSize,
-  );
-
   @property({ type: String })
   language = "text";
 
   @property({ type: String })
   theme = "github-dark";
+
+  @property({ type: Boolean, attribute: "line-numbers" })
+  lineNumbers = false;
+
+  #initialBufferSize = 50;
+  #maxBufferSize = 2000;
+  #calculateBufferSize = createExponentialBackoff(
+    this.#initialBufferSize,
+    this.#maxBufferSize,
+  );
 
   #container: Ref<HTMLElement> = createRef();
   #progressBar: Ref<HTMLProgressElement> = createRef();
@@ -92,6 +108,13 @@ export class CodeView extends AppStyledElement(
 
   async #appendToContainer(node: Node) {
     this.#container.value?.appendChild(node);
+  }
+
+  async #setLineNumWidth(lineNumWidth: number) {
+    this.#container.value?.style.setProperty(
+      "--line-num-width",
+      `${lineNumWidth}ch`,
+    );
   }
 
   async #initializeHighlighter() {
@@ -116,14 +139,43 @@ export class CodeView extends AppStyledElement(
     let lines: string[] = [];
     let isFirstRender = true;
     let bufferSize = this.#calculateBufferSize();
+    const lineNumWidth = Math.max(
+      Math.ceil(this.file.size / 100).toString().length,
+      1,
+    );
+    this.#setLineNumWidth(lineNumWidth);
 
-    const createFragment = (codeLines: string[], language = this.language) => {
+    const renderLineNumbers = this.lineNumbers;
+
+    const createFragment = (
+      codeLines: string[],
+      language = this.language,
+      offset = 0,
+    ) => {
       const fragment = document.createDocumentFragment();
       if (!codeLines.length) return fragment;
       const codeText = codeLines.join("\n");
       const htmlText = highlighter.codeToHtml(codeText, {
         theme: this.theme,
         lang: language,
+        transformers: [
+          {
+            pre(node) {
+              node.properties["tabindex"] = null;
+            },
+            line(node, line) {
+              if (!renderLineNumbers) {
+                return;
+              }
+              node.children.unshift({
+                type: "element",
+                tagName: "span",
+                properties: { class: "number" },
+                children: [{ type: "text", value: `${line + offset}` }],
+              });
+            },
+          },
+        ],
       });
       const parsedDocument = domParser.parseFromString(htmlText, "text/html");
       fragment.append(...parsedDocument.body.childNodes);
@@ -134,6 +186,8 @@ export class CodeView extends AppStyledElement(
     const isXmlLike =
       this.language.includes("xml") || this.language.includes("html");
     let bufferUntilTag = false;
+
+    let offset = 0;
 
     for await (const line of makeTextFileLineIterator(this.file)) {
       if (this.#abortRendering) return;
@@ -176,14 +230,14 @@ export class CodeView extends AppStyledElement(
       // Render preview fragment on first render
       if (isFirstRender) {
         await queueRequestAnimationFrame(() => {
-          const previewFragment = createFragment(lines, "text");
+          const previewFragment = createFragment(lines, "text", offset);
           this.#appendToContainer(previewFragment);
         });
       }
 
       // Render code fragment
       await queueRequestAnimationFrame(() => {
-        const codeFragment = createFragment(lines);
+        const codeFragment = createFragment(lines, this.language, offset);
 
         // Clean up preview fragment
         if (isFirstRender) {
@@ -192,6 +246,7 @@ export class CodeView extends AppStyledElement(
         }
 
         this.#appendToContainer(codeFragment);
+        offset += lines.length;
         lines = [];
       });
 
@@ -201,10 +256,16 @@ export class CodeView extends AppStyledElement(
     // Render remaining lines
     if (lines.length) {
       await queueRequestAnimationFrame(() => {
-        const finalFragment = createFragment(lines);
+        const finalFragment = createFragment(lines, this.language, offset);
         this.#appendToContainer(finalFragment);
+        offset += lines.length;
         lines = [];
       });
+    }
+
+    const actualLineNumWidth = offset.toString().length;
+    if (lineNumWidth < actualLineNumWidth) {
+      this.#setLineNumWidth(actualLineNumWidth);
     }
 
     // Rendering completed

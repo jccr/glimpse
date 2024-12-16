@@ -57,7 +57,11 @@ export class Application extends AppStyledElement(LitElement) {
           return;
         }
 
-        return html`<code-view .file=${file} language="html"></code-view>`;
+        return html`<code-view
+          .file=${file}
+          language="html"
+          line-numbers
+        ></code-view>`;
       },
     },
     {
