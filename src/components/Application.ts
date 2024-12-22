@@ -47,7 +47,7 @@ export class Application extends AppStyledElement(LitElement) {
       path: "/text/html/:name/:lastModified",
       name: "HTML Preview",
       enter: async () => {
-        await import("./render/text/CodeView");
+        await import("./render/text/html/WebView");
         return true;
       },
       render: ({ name, lastModified }) => {
@@ -57,11 +57,11 @@ export class Application extends AppStyledElement(LitElement) {
           return;
         }
 
-        return html`<code-view
+        return html`<web-view
           .file=${file}
           language="html"
           line-numbers
-        ></code-view>`;
+        ></web-view>`;
       },
     },
     {
